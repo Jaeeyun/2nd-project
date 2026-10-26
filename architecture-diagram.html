@@ -1,0 +1,230 @@
+<title>ZTNA 레퍼런스 아키텍처</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  :root{
+    --bg:#faf9f6; --surface:#ffffff; --fg:#1c1f1e; --muted:#6b7270;
+    --line:#2b3331; --band-a:#eef2f1; --band-b:#f3f0e8; --accent:#b4531f;
+    --accent-soft:#f3e3d6; --mesh-no:#8a6d55;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171a; --surface:#1b1f22; --fg:#eef0ee; --muted:#9aa29e;
+      --line:#cfd6d2; --band-a:#1d2624; --band-b:#241f1a; --accent:#e08a4f;
+      --accent-soft:#3a2a1e; --mesh-no:#c79a76; color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171a; --surface:#1b1f22; --fg:#eef0ee; --muted:#9aa29e;
+    --line:#cfd6d2; --band-a:#1d2624; --band-b:#241f1a; --accent:#e08a4f;
+    --accent-soft:#3a2a1e; --mesh-no:#c79a76; color-scheme:dark;
+  }
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    padding-left:max(16px, env(safe-area-inset-left,0px));
+    padding-right:max(16px, env(safe-area-inset-right,0px));
+  }
+  main{max-width:1180px; margin:0 auto; padding-block:32px 60px;}
+  h1{font-size:1.5rem; margin:0 0 4px; text-wrap:balance;}
+  p.lede{color:var(--muted); font-size:.95rem; max-width:640px; margin:0 0 36px;}
+  h2{font-size:1.05rem; margin:40px 0 4px;}
+  p.note{color:var(--muted); font-size:.85rem; margin:0 0 14px; max-width:720px;}
+  figure{margin:0; overflow-x:auto;}
+  figure svg{max-width:100%; height:auto; display:block; min-width:720px;}
+  figcaption{color:var(--muted); font-size:.8rem; margin-top:10px; max-width:720px;}
+  svg text{fill:var(--fg); font-family:inherit;}
+  svg .muted{fill:var(--muted);}
+  svg .box{fill:var(--surface); stroke:var(--line); stroke-width:1.3;}
+  svg .box-nomesh{fill:var(--surface); stroke:var(--mesh-no); stroke-width:1.3; stroke-dasharray:4 3;}
+  svg .box-accent{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1.6;}
+  svg .band{fill-opacity:1; stroke:var(--line); stroke-width:1; stroke-dasharray:3 3;}
+  svg .band-a{fill:var(--band-a);}
+  svg .band-b{fill:var(--band-b);}
+  svg .arrow{stroke:var(--fg); stroke-width:1.3; fill:none;}
+  svg .arrow-dashed{stroke:var(--muted); stroke-width:1.2; fill:none; stroke-dasharray:5 4;}
+  svg .label{font-size:11px; fill:var(--muted);}
+  svg .band-title{font-size:12px; font-weight:600; fill:var(--muted);}
+  footer{color:var(--muted); font-size:.8rem; margin-top:50px; border-top:1px solid var(--line); padding-top:16px;}
+  code{font-size:.85em; background:var(--band-b); padding:1px 5px; border-radius:4px;}
+</style>
+
+<main>
+  <h1>ZTNA 레퍼런스 아키텍처</h1>
+  <p class="lede">Keycloak(SSO) · Istio ext_authz(oauth2-proxy→OPA) · 디바이스 인증서 mTLS · SAML 운영자 접속 · 4종 접속기록 로그 파이프라인을 실제 AWS 위에 구현한 구조.</p>
+
+  <h2>1. 요청 처리 흐름 — 신뢰 경계와 2단계 ext_authz</h2>
+  <p class="note">점선 테두리 상자(oauth2-proxy / OPA)는 Istio 메시 멤버가 아니다 — 사이드카가 없어 자동 mTLS를 못 받는다. Keycloak은 일부러 별도 VPC(점선 경계)에 둬서, EKS가 뚫려도 SSO 발급 주체는 분리된 신뢰 경계에 남게 설계했다.</p>
+
+  <figure>
+    <svg viewBox="0 0 1300 460" role="img" aria-label="브라우저/운영자 요청이 Edge ALB의 디바이스 인증서 mTLS를 거쳐 Istio ingressgateway, oauth2-proxy(1단계 인증), OPA(2단계 인가)를 지나 App Pod와 RDS에 도달하는 흐름, 그리고 운영자가 saml2aws로 Keycloak SAML을 거쳐 STS 단기자격증명으로 EKS API를 호출하는 별도 경로를 보여준다.">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <rect class="band band-a" x="30" y="30" width="280" height="200" rx="10"/>
+      <text class="band-title" x="42" y="48">Keycloak VPC (별도 신뢰 경계)</text>
+      <rect class="band band-b" x="350" y="30" width="910" height="200" rx="10"/>
+      <text class="band-title" x="362" y="48">Demo VPC — EKS 클러스터</text>
+
+      <rect class="box" x="70" y="68" width="200" height="50" rx="6"/>
+      <text x="170" y="89" text-anchor="middle" font-size="12">Keycloak ALB</text>
+      <text class="label" x="170" y="104" text-anchor="middle">TLS, 자체서명, 검증 OFF</text>
+
+      <rect class="box" x="70" y="156" width="200" height="50" rx="6"/>
+      <text x="170" y="177" text-anchor="middle" font-size="12">Keycloak EC2</text>
+      <text class="label" x="170" y="192" text-anchor="middle">Docker 26.7.0 · 사설 서브넷</text>
+
+      <line class="arrow" x1="170" y1="118" x2="170" y2="156" marker-end="url(#arrow)"/>
+      <text class="label" x="178" y="140">forward</text>
+
+      <rect class="box" x="370" y="68" width="120" height="55" rx="6"/>
+      <text x="430" y="90" text-anchor="middle" font-size="12">Edge ALB</text>
+      <text class="label" x="430" y="104" text-anchor="middle">디바이스 cert mTLS :443</text>
+
+      <rect class="box" x="520" y="68" width="115" height="55" rx="6"/>
+      <text x="577" y="90" text-anchor="middle" font-size="12">Istio</text>
+      <text class="label" x="577" y="104" text-anchor="middle">ingressgateway</text>
+
+      <rect class="box-nomesh" x="665" y="68" width="115" height="55" rx="6"/>
+      <text x="722" y="90" text-anchor="middle" font-size="12">oauth2-proxy</text>
+      <text class="label" x="722" y="104" text-anchor="middle">메시 비멤버</text>
+
+      <rect class="box-nomesh" x="810" y="68" width="115" height="55" rx="6"/>
+      <text x="867" y="90" text-anchor="middle" font-size="12">OPA ext_authz</text>
+      <text class="label" x="867" y="104" text-anchor="middle">+device-posture</text>
+
+      <rect class="box" x="955" y="68" width="115" height="55" rx="6"/>
+      <text x="1012" y="90" text-anchor="middle" font-size="12">App Pods</text>
+      <text class="label" x="1012" y="104" text-anchor="middle">Istio 사이드카 mTLS</text>
+
+      <rect class="box" x="1110" y="68" width="80" height="55" rx="6"/>
+      <text x="1150" y="90" text-anchor="middle" font-size="12">RDS</text>
+      <text class="label" x="1150" y="104" text-anchor="middle">pgAudit</text>
+
+      <line class="arrow" x1="490" y1="95" x2="520" y2="95" marker-end="url(#arrow)"/>
+      <line class="arrow" x1="635" y1="95" x2="665" y2="95" marker-end="url(#arrow)"/>
+      <text class="label" x="580" y="84" text-anchor="middle">mTLS 통과 후 라우팅</text>
+
+      <line class="arrow" x1="780" y1="95" x2="810" y2="95" marker-end="url(#arrow)"/>
+      <text class="label" x="795" y="60" text-anchor="middle">1단계: 로그인 확인(http)</text>
+
+      <line class="arrow" x1="925" y1="95" x2="955" y2="95" marker-end="url(#arrow)"/>
+      <text class="label" x="940" y="60" text-anchor="middle">2단계: 인가(grpc)</text>
+
+      <line class="arrow" x1="1070" y1="95" x2="1110" y2="95" marker-end="url(#arrow)"/>
+      <text class="label" x="1090" y="60" text-anchor="middle">공유 static 비밀번호</text>
+
+      <path class="arrow-dashed" d="M 700 123 C 600 200, 300 200, 220 118" marker-end="url(#arrow)"/>
+      <text class="label" x="440" y="196" text-anchor="middle">OIDC 검증 — TLS, 인증서 검증 OFF</text>
+
+      <rect class="box" x="665" y="150" width="160" height="42" rx="6"/>
+      <text x="745" y="167" text-anchor="middle" font-size="12">EKS API 서버</text>
+      <text class="label" x="745" y="180" text-anchor="middle">컨트롤플레인</text>
+
+      <line class="arrow-dashed" x1="310" y1="130" x2="350" y2="130"/>
+      <text class="label" x="330" y="122" text-anchor="middle">Peering</text>
+
+      <rect class="box" x="60" y="310" width="150" height="50" rx="6"/>
+      <text x="135" y="331" text-anchor="middle" font-size="12">운영자</text>
+      <text class="label" x="135" y="346" text-anchor="middle">saml2aws</text>
+
+      <rect class="box" x="420" y="310" width="180" height="50" rx="6"/>
+      <text x="510" y="331" text-anchor="middle" font-size="12">AWS STS</text>
+      <text class="label" x="510" y="346" text-anchor="middle">AssumeRoleWithSAML</text>
+
+      <path class="arrow" d="M 160 310 C 160 250, 170 200, 170 118" marker-end="url(#arrow)"/>
+      <text class="label" x="110" y="260">SAML 로그인</text>
+
+      <path class="arrow" d="M 270 100 C 350 150, 380 280, 420 325" marker-end="url(#arrow)"/>
+      <text class="label" x="300" y="230">SAML assertion</text>
+
+      <path class="arrow" d="M 600 320 C 650 280, 690 230, 715 192" marker-end="url(#arrow)"/>
+      <text class="label" x="620" y="270">단기 자격증명 (kubectl)</text>
+    </svg>
+    <figcaption>브라우저는 Edge ALB의 디바이스 인증서 mTLS와 oauth2-proxy/OPA 2단계 ext_authz를 모두 통과해야 App에 닿는다. 운영자는 같은 Keycloak을 SAML IdP로 써서 STS 단기 자격증명을 받아 EKS API를 직접 호출하는 별도 경로를 쓴다 — 둘 다 Keycloak이 신뢰의 근원이지만 경로는 완전히 분리돼 있다.</figcaption>
+  </figure>
+
+  <h2>2. 접속기록 로그 4종 — 수집 경로와 공통 조인 키</h2>
+  <p class="note">①④는 수집기 코드를 직접 통제해서 그 자리에서 바로 account를 끼워 넣는다. ②③은 AWS 네이티브 export라 손댈 수 없어서, CloudWatch에 들어온 뒤 Lambda가 다시 읽어 구조화한다 — EKS 감사 로그는 비용 절감용 Infrequent Access 클래스라 구독 필터가 안 돼서 5분 스케줄 폴링으로 우회한다.</p>
+
+  <figure>
+    <svg viewBox="0 0 1300 440" role="img" aria-label="4가지 접속기록 로그가 서로 다른 경로로 수집되어 account 필드로 조인되는 과정. 앱 접근은 Fluent Bit가 직접 가공, DB 접속은 구독 필터로 실시간 Lambda 호출, 운영자 접속은 5분 스케줄 Lambda가 Logs Insights로 폴링, 로그인 로그아웃은 EC2 위 Python 스크립트가 직접 가공한다.">
+      <defs>
+        <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <rect class="box" x="60" y="50" width="160" height="42" rx="6"/>
+      <text x="140" y="75" text-anchor="middle" font-size="11.5">①OPA decision log</text>
+      <rect class="box" x="280" y="50" width="190" height="42" rx="6"/>
+      <text x="375" y="68" text-anchor="middle" font-size="11.5">Fluent Bit</text>
+      <text class="label" x="375" y="82" text-anchor="middle">Lua: account 추출</text>
+      <rect class="box-accent" x="900" y="50" width="220" height="42" rx="6"/>
+      <text x="1010" y="68" text-anchor="middle" font-size="11.5">CloudWatch /app-access</text>
+      <text class="label" x="1010" y="82" text-anchor="middle">account = 로그인 계정</text>
+      <line class="arrow" x1="220" y1="71" x2="280" y2="71" marker-end="url(#arrow2)"/>
+      <line class="arrow" x1="470" y1="71" x2="900" y2="71" marker-end="url(#arrow2)"/>
+      <text class="label" x="685" y="64" text-anchor="middle">실시간, 가공 직결</text>
+
+      <rect class="box" x="60" y="150" width="160" height="42" rx="6"/>
+      <text x="140" y="175" text-anchor="middle" font-size="11.5">②RDS pgAudit</text>
+      <rect class="box" x="280" y="150" width="190" height="42" rx="6"/>
+      <text x="375" y="168" text-anchor="middle" font-size="11.5">CloudWatch(raw)</text>
+      <text class="label" x="375" y="182" text-anchor="middle">Standard 클래스</text>
+      <rect class="box" x="530" y="150" width="170" height="42" rx="6"/>
+      <text x="615" y="168" text-anchor="middle" font-size="11.5">Lambda</text>
+      <text class="label" x="615" y="182" text-anchor="middle">구독 필터, 실시간</text>
+      <rect class="box-accent" x="900" y="150" width="220" height="42" rx="6"/>
+      <text x="1010" y="168" text-anchor="middle" font-size="11.5">CloudWatch /db-access</text>
+      <text class="label" x="1010" y="182" text-anchor="middle">account = 공유 DB role</text>
+      <line class="arrow" x1="220" y1="171" x2="280" y2="171" marker-end="url(#arrow2)"/>
+      <line class="arrow" x1="470" y1="171" x2="530" y2="171" marker-end="url(#arrow2)"/>
+      <line class="arrow" x1="700" y1="171" x2="900" y2="171" marker-end="url(#arrow2)"/>
+
+      <rect class="box" x="60" y="250" width="160" height="42" rx="6"/>
+      <text x="140" y="275" text-anchor="middle" font-size="11.5">③EKS 감사 로그</text>
+      <rect class="box" x="280" y="250" width="190" height="42" rx="6"/>
+      <text x="375" y="268" text-anchor="middle" font-size="11.5">CloudWatch(raw)</text>
+      <text class="label" x="375" y="282" text-anchor="middle">Infrequent Access</text>
+      <rect class="box" x="530" y="250" width="170" height="42" rx="6"/>
+      <text x="615" y="268" text-anchor="middle" font-size="11.5">Lambda</text>
+      <text class="label" x="615" y="282" text-anchor="middle">5분 스케줄+Insights</text>
+      <rect class="box-accent" x="900" y="250" width="220" height="42" rx="6"/>
+      <text x="1010" y="268" text-anchor="middle" font-size="11.5">CloudWatch /operator-access</text>
+      <text class="label" x="1010" y="282" text-anchor="middle">account = SAML sessionName</text>
+      <line class="arrow" x1="220" y1="271" x2="280" y2="271" marker-end="url(#arrow2)"/>
+      <line class="arrow" x1="470" y1="271" x2="530" y2="271" marker-end="url(#arrow2)"/>
+      <line class="arrow" x1="700" y1="271" x2="900" y2="271" marker-end="url(#arrow2)"/>
+      <text class="label" x="615" y="240" text-anchor="middle">구독 필터 불가 → 폴링으로 우회</text>
+
+      <rect class="box" x="60" y="350" width="160" height="42" rx="6"/>
+      <text x="140" y="368" text-anchor="middle" font-size="11.5">④Keycloak stdout</text>
+      <text class="label" x="140" y="382" text-anchor="middle">Docker json-file</text>
+      <rect class="box" x="280" y="350" width="190" height="42" rx="6"/>
+      <text x="375" y="368" text-anchor="middle" font-size="11.5">EC2 Python 스크립트</text>
+      <text class="label" x="375" y="382" text-anchor="middle">systemd timer</text>
+      <rect class="box-accent" x="900" y="350" width="220" height="42" rx="6"/>
+      <text x="1010" y="368" text-anchor="middle" font-size="11.5">CloudWatch /login-logout</text>
+      <text class="label" x="1010" y="382" text-anchor="middle">account = 로그인 계정</text>
+      <line class="arrow" x1="220" y1="371" x2="280" y2="371" marker-end="url(#arrow2)"/>
+      <line class="arrow" x1="470" y1="371" x2="900" y2="371" marker-end="url(#arrow2)"/>
+      <text class="label" x="685" y="364" text-anchor="middle">실시간, 가공 직결</text>
+
+      <line class="arrow-dashed" x1="1150" y1="71" x2="1150" y2="371"/>
+      <line class="arrow-dashed" x1="1140" y1="71" x2="1150" y2="71"/>
+      <line class="arrow-dashed" x1="1140" y1="171" x2="1150" y2="171"/>
+      <line class="arrow-dashed" x1="1140" y1="271" x2="1150" y2="271"/>
+      <line class="arrow-dashed" x1="1140" y1="371" x2="1150" y2="371"/>
+      <line class="arrow-dashed" x1="1150" y1="221" x2="1180" y2="221" marker-end="url(#arrow2)"/>
+      <rect class="box-accent" x="1180" y="190" width="100" height="62" rx="8"/>
+      <text x="1230" y="216" text-anchor="middle" font-size="11.5" font-weight="600">공통 키</text>
+      <text x="1230" y="232" text-anchor="middle" font-size="11.5" font-weight="600">account</text>
+    </svg>
+    <figcaption>account라는 필드명은 4종 전부 동일하지만, 값의 의미는 다르다 — ①④는 실제 로그인한 사람, ②는 앱의 공유 DB 서비스 계정, ③은 SAML 세션 이름(사람)이다. ②의 account가 사람을 특정하지 못하는 건 아직 남은 한계다.</figcaption>
+  </figure>
+
+  <footer>demo-project-dev · ap-northeast-2 · 2026-10-22 기준 구조. 점선 신뢰 경계·점선 테두리 상자는 "분리/비보호"를 뜻하고, 굵은 강조 상자는 이번에 account 필드를 새로 갖추게 된 로그 목적지를 뜻한다.</footer>
+</main>

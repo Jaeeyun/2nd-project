@@ -1,0 +1,33 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# 실제 값이 들어가는 변수 파일 - terraform.tfvars.example만 커밋
+infra/terraform.tfvars
+
+# Lambda/Java 빌드 산출물
+infra/lambda/*-build/
+infra/lambda/*.zip
+infra/.build/
+infra/.terraform-tmp/
+infra/opa-keycloak-spi/target/
+
+# Python
+__pycache__/
+*.pyc
+
+# k8s 템플릿 렌더링 결과(실제 계정 ID가 들어감) - .yaml 템플릿만 커밋
+hr-app/k8s/*.rendered.yaml
+
+# OS/에디터
+.DS_Store
+*.swp

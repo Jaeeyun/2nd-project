@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+SCENARIOS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TF_DIR="$(cd "$SCENARIOS_DIR/../.." && pwd)"
+AWS_REGION="ap-northeast-2"
+
+tf_output() {
+  (cd "$TF_DIR" && terraform output -raw "$1" 2>/dev/null)
+}
+
+scene_report() {
+  local scene="$1" purpose="$2" result="$3" cmd="$4"
+  printf '| Scene %-2s | %-55s | %-7s | %s\n' "$scene" "$purpose" "$result" "$cmd"
+}
+
+if [ -t 1 ]; then
+  C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'
+  C_GREEN=$'\033[0;32m'; C_RED=$'\033[0;31m'
+  C_CYAN=$'\033[0;36m'; C_YELLOW=$'\033[1;33m'
+else
+  C_RESET=''; C_BOLD=''; C_GREEN=''; C_RED=''; C_CYAN=''; C_YELLOW=''
+fi
+
+ok()    { echo "  ${C_GREEN}✔ $*${C_RESET}"; }
+fail()  { echo "  ${C_RED}✘ $*${C_RESET}"; }
+step()  { echo "${C_CYAN}${C_BOLD}[STEP $1]${C_RESET} $2"; }
+progress() { echo "${C_CYAN}▶ $*${C_RESET}"; }
+notice_slack() { echo "  ${C_YELLOW}🔔 $*${C_RESET}"; }
+threat() { echo "  ${C_RED}${C_BOLD}⚠ $*${C_RESET}"; }
+
+scene_banner() {
+  local num="$1" title="$2" s1="$3" s2="$4" s3="$5"
+  local line="======================================================================"
+  echo "${C_BOLD}${line}${C_RESET}"
+  echo "${C_BOLD}[SCENE ${num}] ${title}${C_RESET}"
+  echo "${C_BOLD}${line}${C_RESET}"
+  echo "${C_CYAN}[STEP 1]${C_RESET} ${s1}"
+  echo "${C_CYAN}[STEP 2]${C_RESET} ${s2}"
+  echo "${C_CYAN}[STEP 3]${C_RESET} ${s3}"
+  echo "----------------------------------------------------------------------"
+}
+
+result_box() {
+  local status="$1" desc="$2" color="$C_GREEN"
+  case "$status" in
+    *FAIL*) color="$C_RED" ;;
+  esac
+  echo "----------------------------------------------------------------------"
+  echo "${color}${C_BOLD}[결과]: ${status}${C_RESET} (${desc})"
+  echo "${C_BOLD}======================================================================${C_RESET}"
+}
